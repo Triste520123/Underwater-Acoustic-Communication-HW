@@ -60,7 +60,7 @@ function communication_distance_calculator()
                 distances = zeros(size(freqs));
                 for f_idx = 1:length(freqs)
                     f = freqs(f_idx);
-                    distances(f_idx) = calculate_distance(SL, SNR_req, f, s, w, BW, gamma);
+                    distances(f_idx) = calculate_distance(SL, SNR_req, f, s, w,gamma);
                 end
                 
                 % 存储结果
@@ -73,7 +73,7 @@ function communication_distance_calculator()
     plot_results(freqs, s_values, w_values, gamma_values, results, SL, SNR_req, BW);
 end
 
-function d = calculate_distance(SL, SNR_req, f, s, w, BW, gamma)
+function d = calculate_distance(SL, SNR_req, f, s, w, gamma)
     % 计算特定条件下的通信距离
     
     % 转换为kHz用于公式计算
@@ -86,21 +86,28 @@ function d = calculate_distance(SL, SNR_req, f, s, w, BW, gamma)
     alpha = (term1 + term2 + term3 + 0.003) / 1000;
     
     % 计算噪声级
-    % 湍流噪声
-    N_turb = 10^(1.7 - 3*log10(f_kHz));
+    f_integrate = 100:1:200; % 1Hz步长
+    %f_integrate = 20e3; % 1Hz步长
+    total_noise_power = 0;
     
-    % 航运噪声
-    N_ship = 10^(4 + 2*(s-0.5) + 2.6*log10(f_kHz) - 6*log10(f_kHz + 0.03));
+    for f_i = f_integrate
+        f_kHz_i = f_i / 1000;
+        
+        % 计算每个频率点的噪声谱密度（线性值）
+        N_turb_i = 10^(1.7 - 3*log10(f_kHz_i));
+        N_ship_i = 10^(4 + 2*(s-0.5) + 2.6*log10(f_kHz_i) - 6*log10(f_kHz_i + 0.03));
+        N_wave_i = 10^(5 + 0.75*sqrt(w) + 2*log10(f_kHz_i) - 4*log10(f_kHz_i + 0.4));
+        N_ther_i = 10^(-1.5 + 2*log10(f_kHz_i));
+        
+        % 总噪声谱密度（线性值）
+        N_total_psd = N_turb_i + N_ship_i + N_wave_i + N_ther_i;
+        
+        % 积分：噪声谱密度乘以频率步长
+        total_noise_power = total_noise_power + N_total_psd *1; % 1Hz步长
+    end
     
-    % 波浪噪声
-    N_wave = 10^(5 + 0.75*sqrt(w) + 2*log10(f_kHz) - 4*log10(f_kHz + 0.4));
-    
-    % 热噪声
-    N_ther = 10^(-1.5 + 2*log10(f_kHz));
-    
-    % 总噪声级 (dB)，考虑带宽
-    NL = 10*log10(N_turb + N_ship + N_wave + N_ther) + 10*log10(BW);
-    
+    % 将积分后的总噪声功率转换为分贝值
+    NL = 10*log10(total_noise_power); 
     % 使用数值方法求解距离d
     % 方程: SL - [gamma*10*log10(d) + d*alpha] - NL = SNR_req
     % 重新排列: gamma*10*log10(d) + d*alpha = SL - NL - SNR_req
@@ -111,18 +118,18 @@ function d = calculate_distance(SL, SNR_req, f, s, w, BW, gamma)
     options = optimset('Display', 'off');
 try
     % 先尝试小范围
-    d = fzero(@(d) propagation_loss(d, f_kHz, gamma, alpha) - target, [1, 10000], options);
+    d = fzero(@(d) propagation_loss(d, gamma, alpha) - target, [1, 10e4], options);
 catch
     try
         % 失败后尝试更大范围
-        d = fzero(@(d) propagation_loss(d, f_kHz, gamma, alpha) - target, [1, 1e7], options);
+        d = fzero(@(d) propagation_loss(d, gamma, alpha) - target, [1, 1e7], options);
     catch
         d = NaN;
     end
 end
 end
 
-function loss = propagation_loss(d, f_kHz, gamma, alpha)
+function loss = propagation_loss(d, gamma, alpha)
     % 计算传播损失
     loss = gamma * 10 * log10(d) + d * alpha;
 end
@@ -136,7 +143,7 @@ function plot_results(freqs, s_values, w_values, gamma_values, results, SL, SNR_
     gamma_names = {'柱面扩展', '浅海声传播', '球面扩展'};
     
     % 创建图表 - 调整大小和位置
-    fig = figure('Position', [100, 100, 1200, 800], 'Name', '水下声通信理论距离分析', 'Color', 'w');
+    fig = figure('Position', [100, 100, 1000, 600], 'Name', '水下声通信理论距离分析', 'Color', 'w');
     
     % 使用tiledlayout创建更紧凑的布局
     t = tiledlayout(2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
